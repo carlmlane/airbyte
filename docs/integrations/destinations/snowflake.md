@@ -62,6 +62,10 @@ entities:
     [Snowflake identifier requirements](https://docs.snowflake.com/en/sql-reference/identifiers-syntax.html)
     while renaming the resources.
 
+:::warning
+This script creates a user that authenticates with a password. Snowflake is phasing out password sign-ins for service users, so for a new setup, create the user with `TYPE = SERVICE` and an RSA public key instead of a password, then use [key pair authentication](#key-pair-authentication) in Airbyte. See [Key-pair authentication](https://docs.snowflake.com/en/user-guide/key-pair-auth) and the [deprecation timeline](https://docs.snowflake.com/en/user-guide/security-mfa-rollout).
+:::
+
 ```sql
 -- set variables (these need to be uppercase)
 set airbyte_role = 'AIRBYTE_ROLE';
@@ -147,7 +151,7 @@ Navigate to the Airbyte UI to set up Snowflake as a destination. You can authent
 username/password or key pair authentication.
 
 :::warning
-Snowflake is phasing out single-factor password sign-ins, and the Airbyte user is a service user. Since May 2026, new non-human users must be created with `TYPE=SERVICE`, which can't authenticate with a password. Between August and October 2026, Snowflake blocks password authentication for all remaining non-human users, account by account. Use key pair authentication so your syncs keep working. See [Snowflake's deprecation timeline](https://docs.snowflake.com/en/user-guide/security-mfa-rollout).
+Snowflake is phasing out single-factor password sign-ins, and the Airbyte user is a service user. Snowflake enforces this account by account: between May and July 2026, new non-human users must be created with `TYPE=SERVICE`, which can't authenticate with a password. Between August and October 2026, Snowflake blocks password authentication for all remaining non-human users. Use key pair authentication so your syncs keep working. See [Snowflake's deprecation timeline](https://docs.snowflake.com/en/user-guide/security-mfa-rollout).
 :::
 
 ### Login and Password
@@ -175,7 +179,7 @@ Key pair authentication uses the same Host, Role, Warehouse, Database, Default S
 
 | Field | Description |
 | :---- | :---------- |
-| Private Key | The full contents of the PKCS#8 private key file, including the `-----BEGIN ...PRIVATE KEY-----` and `-----END ...PRIVATE KEY-----` lines. Airbyte writes this value to a key file and passes it to the Snowflake JDBC driver, so partial or reformatted keys fail. |
+| Private Key | The full contents of the PKCS#8 private key file, including the `-----BEGIN ...PRIVATE KEY-----` and `-----END ...PRIVATE KEY-----` lines. Airbyte writes the value to a key file and passes it to the Snowflake JDBC driver unchanged, so it must be a complete, valid key. |
 | Passphrase (Optional) | The passphrase that decrypts the private key. Only set this if you generated an encrypted key. |
 
 <KeypairExample/>
