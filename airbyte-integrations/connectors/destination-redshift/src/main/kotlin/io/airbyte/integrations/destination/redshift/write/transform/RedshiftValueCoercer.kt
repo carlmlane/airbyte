@@ -11,12 +11,15 @@ import io.airbyte.cdk.load.data.IntegerValue
 import io.airbyte.cdk.load.data.NullValue
 import io.airbyte.cdk.load.data.NumberValue
 import io.airbyte.cdk.load.data.ObjectValue
+import io.airbyte.cdk.load.data.StringType
 import io.airbyte.cdk.load.data.StringValue
 import io.airbyte.cdk.load.data.UnionType
+import io.airbyte.cdk.load.data.UnknownType
 import io.airbyte.cdk.load.data.csv.toCsvValue
 import io.airbyte.cdk.load.dataflow.transform.ValidationResult
 import io.airbyte.cdk.load.dataflow.transform.ValueCoercer
 import io.airbyte.cdk.load.util.serializeToString
+import io.airbyte.integrations.destination.redshift.sql.RedshiftSqlGenerator
 import io.airbyte.protocol.models.v0.AirbyteRecordMessageMetaChange
 import jakarta.inject.Singleton
 import java.math.BigDecimal
@@ -48,17 +51,27 @@ internal const val VARCHAR_MAX_BYTES = 65_535
 class RedshiftValueCoercer : ValueCoercer {
 
     /**
-     * Serializes Union typed values to JSON strings for storage in VARCHAR columns.
-     *
-     * Union types are mapped to `varchar(65535)` columns. Values must be serialized to a JSON
-     * string representation so they can be stored. [NullValue]s pass through unchanged.
+     * Transforms values before validation:
+     * 1. Serializes Union typed values to JSON strings for VARCHAR storage.
+     * 2. Encodes [NullValue] as the [RedshiftSqlGenerator.NULL_SENTINEL] string for columns
+     * ```
+     *    that map to VARCHAR (StringType, UnionType, UnknownType). This lets the COPY command's
+     *    `NULL AS` option distinguish genuine nulls from empty strings.
+     * ```
      */
     override fun map(value: EnrichedAirbyteValue): EnrichedAirbyteValue {
         if (value.type is UnionType && value.abValue !is NullValue) {
             value.abValue = StringValue(value.abValue.serializeToString())
         }
+        if (value.abValue is NullValue && isVarcharType(value.type)) {
+            value.abValue = StringValue(RedshiftSqlGenerator.NULL_SENTINEL)
+        }
         return value
     }
+
+    /** Returns true if the AirbyteType maps to a Redshift VARCHAR column. */
+    private fun isVarcharType(type: io.airbyte.cdk.load.data.AirbyteType): Boolean =
+        type is StringType || type is UnionType || type is UnknownType
 
     /**
      * Validates values against Redshift's data type constraints.
@@ -102,8 +115,10 @@ class RedshiftValueCoercer : ValueCoercer {
             }
             is StringValue -> {
                 if (isStringOversized(abValue.value)) {
-                    ValidationResult.ShouldNullify(
-                        AirbyteRecordMessageMetaChange.Reason.DESTINATION_FIELD_SIZE_LIMITATION
+                    ValidationResult.ShouldTruncate(
+                        truncatedValue = StringValue(RedshiftSqlGenerator.NULL_SENTINEL),
+                        reason =
+                            AirbyteRecordMessageMetaChange.Reason.DESTINATION_FIELD_SIZE_LIMITATION,
                     )
                 } else {
                     ValidationResult.Valid

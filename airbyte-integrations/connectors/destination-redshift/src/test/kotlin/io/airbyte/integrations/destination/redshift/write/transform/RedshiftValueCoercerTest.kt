@@ -23,6 +23,7 @@ import io.airbyte.cdk.load.data.StringValue
 import io.airbyte.cdk.load.data.UnionType
 import io.airbyte.cdk.load.data.UnknownType
 import io.airbyte.cdk.load.dataflow.transform.ValidationResult
+import io.airbyte.integrations.destination.redshift.sql.RedshiftSqlGenerator
 import io.airbyte.protocol.models.v0.AirbyteRecordMessageMetaChange
 import java.math.BigDecimal
 import java.math.BigInteger
@@ -87,13 +88,64 @@ internal class RedshiftValueCoercerTest {
     }
 
     @Test
-    fun `map preserves NullValue for union types`() {
+    fun `map converts NullValue to sentinel for union types (varchar)`() {
         val enriched =
             enriched(NullValue, UnionType(options = setOf(StringType), isLegacyUnion = false))
 
         val result = coercer.map(enriched)
 
-        assertEquals(NullValue, result.abValue)
+        assertTrue(result.abValue is StringValue)
+        assertEquals(RedshiftSqlGenerator.NULL_SENTINEL, (result.abValue as StringValue).value)
+    }
+
+    @Test
+    fun `map converts NullValue to sentinel for StringType (varchar)`() {
+        val enriched = enriched(NullValue, StringType)
+
+        val result = coercer.map(enriched)
+
+        assertTrue(result.abValue is StringValue)
+        assertEquals(RedshiftSqlGenerator.NULL_SENTINEL, (result.abValue as StringValue).value)
+    }
+
+    @Test
+    fun `map converts NullValue to sentinel for UnknownType (varchar)`() {
+        val enriched = enriched(NullValue, UnknownType(schema = NullNode.instance))
+
+        val result = coercer.map(enriched)
+
+        assertTrue(result.abValue is StringValue)
+        assertEquals(RedshiftSqlGenerator.NULL_SENTINEL, (result.abValue as StringValue).value)
+    }
+
+    @Test
+    fun `map preserves NullValue for non-varchar types`() {
+        val intEnriched = enriched(NullValue, IntegerType)
+        assertEquals(NullValue, coercer.map(intEnriched).abValue)
+
+        val numEnriched = enriched(NullValue, NumberType)
+        assertEquals(NullValue, coercer.map(numEnriched).abValue)
+
+        val objEnriched = enriched(NullValue, ObjectType(linkedMapOf()))
+        assertEquals(NullValue, coercer.map(objEnriched).abValue)
+    }
+
+    @Test
+    fun `map does not apply sentinel to non-null varchar values`() {
+        val enriched = enriched(StringValue("hello"), StringType)
+
+        val result = coercer.map(enriched)
+
+        assertEquals(StringValue("hello"), result.abValue)
+    }
+
+    @Test
+    fun `map does not apply sentinel to empty string varchar values`() {
+        val enriched = enriched(StringValue(""), StringType)
+
+        val result = coercer.map(enriched)
+
+        assertEquals(StringValue(""), result.abValue)
     }
 
     // ================================================================
@@ -203,18 +255,30 @@ internal class RedshiftValueCoercerTest {
     }
 
     @Test
-    fun `validate nullifies string exceeding VARCHAR byte limit`() {
+    fun `validate truncates oversized string to null sentinel`() {
         val value = "a".repeat(VARCHAR_MAX_BYTES + 1) // 65536 ASCII chars = 65536 bytes
         val result = coercer.validate(enriched(StringValue(value), StringType))
-        assertShouldNullify(result)
+
+        assertTrue(result is ValidationResult.ShouldTruncate)
+        val truncated = result as ValidationResult.ShouldTruncate
+        assertEquals(StringValue(RedshiftSqlGenerator.NULL_SENTINEL), truncated.truncatedValue)
+        assertEquals(
+            AirbyteRecordMessageMetaChange.Reason.DESTINATION_FIELD_SIZE_LIMITATION,
+            truncated.reason,
+        )
     }
 
     @Test
-    fun `validate nullifies multi-byte string exceeding VARCHAR byte limit`() {
+    fun `validate truncates multi-byte oversized string to null sentinel`() {
         // Each emoji is 4 bytes in UTF-8. 16384 emojis = 65536 bytes > 65535 limit.
         val value = "\uD83D\uDE00".repeat(16384)
         val result = coercer.validate(enriched(StringValue(value), StringType))
-        assertShouldNullify(result)
+
+        assertTrue(result is ValidationResult.ShouldTruncate)
+        assertEquals(
+            StringValue(RedshiftSqlGenerator.NULL_SENTINEL),
+            (result as ValidationResult.ShouldTruncate).truncatedValue,
+        )
     }
 
     @Test
