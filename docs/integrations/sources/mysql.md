@@ -87,7 +87,7 @@ To fill out the required information:
 
 1. Enter the hostname, port number, and name for your MySQL database.
 2. Enter the username and password you created in [Step 1](#step-1-create-a-dedicated-read-only-mysql-user).
-3. Select an SSL mode. You will most frequently choose `require` or `verify-ca`. Both of these always require encryption. `verify-ca` also requires certificates from your MySQL database. See [here](#ssl-modes) to learn about other SSL modes and SSH tunneling.
+3. Select an SSL mode. You will most frequently choose `required` or `verify_ca`. Both of these always require encryption. `verify_ca` also requires certificates from your MySQL database. See [here](#ssl-modes) to learn about other SSL modes and SSH tunneling.
 4. Select `Read Changes using Binary Log (CDC)` from available replication methods.
 
 <!-- env:cloud -->
@@ -121,6 +121,21 @@ Airbyte offers incremental replication using a custom cursor available in your s
 
 - Your MySQL server does not expose the binlog.
 - Your data set is small, and you just want snapshot of your table in the destination.
+
+</FieldAnchor>
+
+## Limiting which tables Airbyte discovers
+
+<FieldAnchor field="table_filters">
+
+By default, the connector discovers every table and view in the configured database that your MySQL user can read. In databases with a very large number of tables, this can make schema discovery slow. Use `Table Filters` to narrow discovery to the tables you care about.
+
+Each filter has two parts:
+
+- `Database Name`: the database the filter applies to. This must match the database you entered in the `Database` field. If it doesn't, the connector fails with a configuration error.
+- `Patterns`: one or more table name patterns, written as SQL `LIKE` patterns. `%` matches any sequence of characters and `_` matches a single character. For example, `orders_%` matches `orders_2024` and `orders_2025`.
+
+Filters are inclusive: when you set at least one pattern, only the tables matching a pattern are discovered. Filters apply during schema discovery, so they determine which streams are available to select in a connection.
 
 </FieldAnchor>
 

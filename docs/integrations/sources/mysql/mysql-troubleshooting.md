@@ -106,16 +106,20 @@ Global transaction identifiers \(GTIDs\) uniquely identify transactions that occ
 - Enable gtid_mode : Boolean that specifies whether GTID mode of the MySQL server is enabled or not. Enable it via `mysql> gtid_mode=ON`
 - Enable enforce_gtid_consistency : Boolean that specifies whether the server enforces GTID consistency by allowing the execution of statements that can be logged in a transactionally safe manner. Required when using GTIDs. Enable it via `mysql> enforce_gtid_consistency=ON`
 
-### (Advanced) Setting up initial CDC waiting time
+### (Advanced) Initial Load Timeout in Hours
 
-The MySQL connector may need some time to start processing the data in the CDC mode in the following scenarios:
+When a CDC connection syncs for the first time, or when you add a stream to it, the connector takes an initial snapshot of the affected tables before it starts reading the binlog. `Initial Load Timeout in Hours` limits how long that snapshot is allowed to run in a single attempt. The default is 8 hours, and you can set any value from 4 to 24 hours.
 
-- When the connection is set up for the first time and a snapshot is needed
-- When the connector has a lot of change logs to process
+When the timeout elapses, the connector ends the attempt with a transient error so that it can process the binlog events that accumulated while the snapshot was running. The snapshot resumes from its last checkpoint on the next attempt, so no already-synced data is re-read.
 
-The connector waits for the default initial wait time of 5 minutes (300 seconds). Setting the parameter to a longer duration will result in slower syncs, while setting it to a shorter duration may cause the connector to not have enough time to create the initial snapshot or read through the change logs. The valid range is 300 seconds to 1200 seconds.
+Raise this value if you're snapshotting very large tables and your binlog retention is long enough to cover the whole snapshot. Lower it if your binlog retention is short and you'd rather have the connector process pending binlog events more often.
 
-If you know there are database changes to be synced, but the connector cannot read those changes, the root cause may be insufficient waiting time. In that case, you can increase the waiting time (example: set to 600 seconds) to test if it is indeed the root cause. On the other hand, if you know there are no database changes, you can decrease the wait time to speed up the zero record syncs.
+### (Advanced) Invalid CDC Position Behavior
+
+If the position the connector saved in state is no longer present in the binlog — usually because the binlog expired while the connection was paused or failing — the connector can't continue incrementally. `Invalid CDC Position Behavior` controls what happens next:
+
+- `Fail sync` (default): the sync fails. You must reset the connection manually before syncing again.
+- `Re-sync data`: Airbyte automatically triggers a full refresh of the affected streams. This re-reads all data, which increases sync cost and duration.
 
 ### (Advanced) Set up server timezone
 
