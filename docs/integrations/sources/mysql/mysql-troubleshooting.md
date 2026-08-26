@@ -110,16 +110,16 @@ Global transaction identifiers \(GTIDs\) uniquely identify transactions that occ
 
 When a CDC connection syncs for the first time, or when you add a stream to it, the connector takes an initial snapshot of the affected tables before it starts reading the binlog. `Initial Load Timeout in Hours` limits how long that snapshot is allowed to run in a single attempt. The default is 8 hours, and you can set any value from 4 to 24 hours.
 
-When the timeout elapses, the connector ends the attempt with a transient error so that it can process the binlog events that accumulated while the snapshot was running. The snapshot resumes from its last checkpoint on the next attempt, so no already-synced data is re-read.
+If the snapshot is still running when the timeout elapses, the connector stops it and the attempt ends with a transient error. Airbyte retries, and because snapshot progress is checkpointed, the following attempt resumes where the previous one stopped instead of starting over. The timeout keeps a single attempt from snapshotting indefinitely while binlog events pile up behind it.
 
-Raise this value if you're snapshotting very large tables and your binlog retention is long enough to cover the whole snapshot. Lower it if your binlog retention is short and you'd rather have the connector process pending binlog events more often.
+Raise this value if you're snapshotting very large tables and your binlog retention is long enough to cover the whole snapshot. Lower it if your binlog retention is short and you want the connector to reach the binlog sooner.
 
 ### (Advanced) Invalid CDC Position Behavior
 
 If the position the connector saved in state is no longer present in the binlog — usually because the binlog expired while the connection was paused or failing — the connector can't continue incrementally. `Invalid CDC Position Behavior` controls what happens next:
 
 - `Fail sync` (default): the sync fails. You must reset the connection manually before syncing again.
-- `Re-sync data`: Airbyte automatically triggers a full refresh of the affected streams. This re-reads all data, which increases sync cost and duration.
+- `Re-sync data`: the connector resets CDC state for every stream in the connection and snapshots them again. All data is re-read, which increases sync duration and cost, and any rows deleted from the source while the saved position was invalid aren't emitted as CDC deletions, so they can remain in your destination.
 
 ### (Advanced) Set up server timezone
 

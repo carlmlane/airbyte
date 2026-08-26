@@ -133,7 +133,7 @@ By default, the connector discovers every table and view in the configured datab
 Each filter has two parts:
 
 - `Database Name`: the database the filter applies to. This must match the database you entered in the `Database` field. If it doesn't, the connector fails with a configuration error.
-- `Patterns`: one or more table name patterns, written as SQL `LIKE` patterns. `%` matches any sequence of characters and `_` matches a single character. For example, `orders_%` matches `orders_2024` and `orders_2025`.
+- `Table Filter Patterns`: one or more table name patterns, written as SQL `LIKE` patterns. `%` matches any sequence of characters and `_` matches a single character. For example, `orders_%` matches `orders_2024` and `orders_2025`.
 
 Filters are inclusive: when you set at least one pattern, only the tables matching a pattern are discovered. Filters apply during schema discovery, so they determine which streams are available to select in a connection.
 
